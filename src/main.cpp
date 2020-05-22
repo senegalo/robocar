@@ -42,53 +42,60 @@
   8  // Rear left Motor direction pin 2 to Back MODEL-X IN4  k3
 #define speedPinLB 12  //   LEFT WHEEL  PWM pin D8 connect Rear MODEL-X ENB
 /*motor control*/
+
+int motorPwd = 63;
+
+int diamondHigh = 90;
+
+int diamondLow = diamondHigh * 3 / 4;
+
 void FR_fwd(int speed)  // front-right wheel forward turn
-{
-  digitalWrite(RightMotorDirPin1, LOW);
-  digitalWrite(RightMotorDirPin2, HIGH);
-  analogWrite(speedPinR, speed);
-}
-void FR_bck(int speed)  // front-right wheel backward turn
 {
   digitalWrite(RightMotorDirPin1, HIGH);
   digitalWrite(RightMotorDirPin2, LOW);
   analogWrite(speedPinR, speed);
 }
-void FL_fwd(int speed)  // front-left wheel forward turn
+void FR_bck(int speed)  // front-right wheel backward turn
 {
-  digitalWrite(LeftMotorDirPin1, LOW);
-  digitalWrite(LeftMotorDirPin2, HIGH);
-  analogWrite(speedPinL, speed);
+  digitalWrite(RightMotorDirPin1, LOW);
+  digitalWrite(RightMotorDirPin2, HIGH);
+  analogWrite(speedPinR, speed);
 }
-void FL_bck(int speed)  // front-left wheel backward turn
+void FL_fwd(int speed)  // front-left wheel forward turn
 {
   digitalWrite(LeftMotorDirPin1, HIGH);
   digitalWrite(LeftMotorDirPin2, LOW);
   analogWrite(speedPinL, speed);
 }
+void FL_bck(int speed)  // front-left wheel backward turn
+{
+  digitalWrite(LeftMotorDirPin1, LOW);
+  digitalWrite(LeftMotorDirPin2, HIGH);
+  analogWrite(speedPinL, speed);
+}
 
 void RR_fwd(int speed)  // rear-right wheel forward turn
-{
-  digitalWrite(RightMotorDirPin1B, LOW);
-  digitalWrite(RightMotorDirPin2B, HIGH);
-  analogWrite(speedPinRB, speed);
-}
-void RR_bck(int speed)  // rear-right wheel backward turn
 {
   digitalWrite(RightMotorDirPin1B, HIGH);
   digitalWrite(RightMotorDirPin2B, LOW);
   analogWrite(speedPinRB, speed);
 }
+void RR_bck(int speed)  // rear-right wheel backward turn
+{
+  digitalWrite(RightMotorDirPin1B, LOW);
+  digitalWrite(RightMotorDirPin2B, HIGH);
+  analogWrite(speedPinRB, speed);
+}
 void RL_fwd(int speed)  // rear-left wheel forward turn
 {
-  digitalWrite(LeftMotorDirPin1B, LOW);
-  digitalWrite(LeftMotorDirPin2B, HIGH);
+  digitalWrite(LeftMotorDirPin1B, HIGH);
+  digitalWrite(LeftMotorDirPin2B, LOW);
   analogWrite(speedPinLB, speed);
 }
 void RL_bck(int speed)  // rear-left wheel backward turn
 {
-  digitalWrite(LeftMotorDirPin1B, HIGH);
-  digitalWrite(LeftMotorDirPin2B, LOW);
+  digitalWrite(LeftMotorDirPin1B, LOW);
+  digitalWrite(LeftMotorDirPin2B, HIGH);
   analogWrite(speedPinLB, speed);
 }
 void right_shift(int speed_fl_fwd, int speed_rl_bck, int speed_rr_fwd,
@@ -201,6 +208,27 @@ void init_GPIO() {
   stop_Stop();
 }
 
+int readSpeed(WiFiEspClient client, RingBuffer buf) {
+  int out = 0;
+  while (client.connected()) {  // loop while the client's connected
+    Serial.println("Client Connected");
+    if (client.available()) {  // if there's bytes to read from the client,
+      Serial.println("Client Available");
+      char c = client.read();  // read a byte, then
+      buf.push(c);             // push it to the ring buffer
+      int chr = (int)c - 48;
+      Serial.println(chr);
+      if (chr < 0 || chr > 9) {  // break on invalid number
+        client.println("HTTP/1.1 200 OK");
+        client.println();
+        return out;
+      }
+      out = out * 10 + chr;
+    }
+  }
+  return out;
+}
+
 int status = WL_IDLE_STATUS;
 WiFiEspServer server(80);
 // use a ring buffer to increase speed and reduce memory allocation
@@ -248,11 +276,8 @@ void loop() {
     while (client.connected()) {   // loop while the client's connected
       if (client.available()) {    // if there's bytes to read from the client,
         char c = client.read();    // read a byte, then
-        buf.push(c);               // push it to the ring buffer
-
-        // printing the stream to the serial monitor will slow down
-        // the receiving of data from the ESP filling the serial buffer
-        //    Serial.write(c);
+        Serial.write(c);
+        buf.push(c);  // push it to the ring buffer
 
         if (buf.endsWith("\r\n\r\n")) {
           client.println("HTTP/1.1 200 OK");
@@ -261,33 +286,33 @@ void loop() {
         }
 
         // Check to see if the client request was "GET /H" or "GET /L":
-        if (buf.endsWith("?a=A")) {
+        if (buf.endsWith("?a=S")) {
+          Serial.println("Reading Speed");
+          motorPwd = readSpeed(client, buf);
+          break;
+        } else if (buf.endsWith("?a=A")) {
           // Serial.println("go Ahead");
-          go_advance(SPEED);
-
+          go_advance(motorPwd);
         } else if (buf.endsWith("?a=B")) {
-          go_back(SPEED);
-
+          go_back(motorPwd);
         } else if (buf.endsWith("?a=L")) {
-          left_turn(TURN_SPEED);
-
+          left_turn(motorPwd);
         } else if (buf.endsWith("?a=R")) {
-          right_turn(TURN_SPEED);
-
+          right_turn(motorPwd);
         } else if (buf.endsWith("?a=E")) {
           stop_Stop();
         } else if (buf.endsWith("?a=O")) {
-          left_shift(200, 150, 150, 200);
+          left_shift(diamondHigh, diamondLow, diamondLow, diamondHigh);
         } else if (buf.endsWith("?a=F")) {
-          right_shift(200, 150, 150, 200);
+          right_shift(diamondHigh, diamondLow, diamondLow, diamondHigh);
         } else if (buf.endsWith("?a=1")) {
-          left_shift(0, 150, 0, 150);  // left ahead
+          left_shift(0, diamondLow, 0, diamondLow);  // left ahead
         } else if (buf.endsWith("?a=4")) {
-          left_shift(150, 0, 150, 0);  // left back
+          left_shift(diamondLow, 0, diamondLow, 0);  // left back
         } else if (buf.endsWith("?a=3")) {
-          right_shift(180, 0, 150, 0);  // right ahead
+          right_shift(diamondLow, 0, diamondLow, 0);  // right ahead
         } else if (buf.endsWith("?a=6")) {
-          right_shift(0, 130, 0, 130);  // right back
+          right_shift(0, diamondLow, 0, diamondLow);  // right back
         }
       }
     }
